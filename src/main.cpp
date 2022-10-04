@@ -156,8 +156,8 @@ void wallFollowController () {
      */
      if (behaviorState & MASK_WALLFOLLOW)  {
        Serial.println("wallFollowController:  activated");
-       chassis.moveArch(10,25, true);
-       chassis.turnFor(WALL_FOLLOW_TURNANGLE, WALL_FOLLOW_TURNRATE, true);
+       chassis.turnFor(WALL_FOLLOW_TURNANGLE, WALL_FOLLOW_TURNRATE, true);    //Given sequential controllers, it makes more sense to assume a 180-degree turn is needed first.
+       chassis.moveArch(10,25, true);                                         //Now that the heading direction is correct, move in an arch fashion.
        behaviorState &= (~MASK_WALLFOLLOW);
      } else {
        break;
@@ -175,24 +175,40 @@ void wallFollowController () {
  */
 void wanderController() {
   float turnAngle= rand() % WANDER_ANGLE;
+  distance = 0.0;
 
   /****
    *  activate wander only if approach controller
    *  and wall follow controllers are not active
    */
-  if ( behaviorState & MASK_WANDER) {
+  if ( (behaviorState & MASK_WANDER)) {
     Serial.println("wanderController:  activated");
 
     Serial.print("wanderController:  selected turnAngle= ");
     Serial.println(turnAngle);
 
     chassis.turnFor(turnAngle, WANDER_TURN_RATE, true);
-    chassis.driveFor(WANDER_DIST, WANDER_SPEED, true);
-    behaviorState &= (~MASK_WANDER);
-  } 
+
+    //If the Romi turns, we should check to ensure no obstacles exist. For example, we could turn 90 degrees into a wall.
+    Serial.println("ROMI TURNED");
+    //delay(100);                                   //Experimental process for rangefinder getDistance issues...
+    distance = rangefinder.getDistance();     //getDistance for the rangefinder produced highly unpredictable readouts here. It seems we need to 'kick off' a read here.
+    //inches = distance * CM_TO_INCHES;
+    //Serial.print("WANDER DISTANCE= ");
+    //Serial.println(inches);
+    delay(10);                                //After significant debugging, we have determined this statement is the only way to get an accurate rangefinder getDistance read.
+    distance = rangefinder.getDistance();     //It at least appears that waiting for the first ping to 'return' is necessary. This read will now be accurate.
+    inches = distance * CM_TO_INCHES;
+    Serial.print("WANDER DISTANCE= ");
+    Serial.println(inches);
+    if(inches < 20.0){                                      //Our proximity is now very close; at this point, allow the approach controller to take over.
+      behaviorState &= (~MASK_WANDER);
+    } else {                                                 //There is no imminent threat of hitting something; proceed with a forward wander.
+      chassis.driveFor(WANDER_DIST, WANDER_SPEED, true);
+      behaviorState &= (~MASK_WANDER);
+    }
+  }
 }
-
-
 
 
 /*****
@@ -257,7 +273,7 @@ void approachController() {
     Serial.println(actuation);
 
     /***
-     *  If error ( eT_deltaT) is mall and magnitude of actuation is very small, just
+     *  If error ( eT_deltaT) is small and magnitude of actuation is very small, just
      *  call it zero.
      */
     if ( (fabs(actuation) < 0.2) || (fabs(eT_deltaT) < 0.1) ) { 
@@ -354,7 +370,9 @@ void loop() {
 
 
       //ultrasonic rangefinder
-      distance= rangefinder.getDistance();
+      distance = rangefinder.getDistance();
+      delay(100);                               //See wanderController() for more information. Waiting for the first ping to 'return'.
+      distance = rangefinder.getDistance();
 
 
       state= STATE_THINK;
@@ -384,18 +402,34 @@ void loop() {
         /****
          *  Test here turning on each
          *  basis behavior
+         * 
+         *    Decision logic is implemented to decide what controller should be used based on environmental conditions.
+         * 
          */
-        behaviorState|= MASK_APPROACH; 
-        approachController();
-        behaviorState &= (~MASK_APPROACH);
 
-        //behaviorState|= MASK_WALLFOLLOW;
-        //wallFollowController();
-        //behaviorState&= (~MASK_WALLFOLLOW);
+        //Approaching depends on being a specific distance away from a wall. Back up if you are too close compared to the desired reference distance.
+        if((meas <= 20.0 && meas > 6.25) || (meas <= 20.0 && meas < 5.75)){       //If you are within a reasonable distance of a wall, approach it.
+          Serial.println("THIS IS APPROACH");
+          behaviorState|= MASK_APPROACH;
+          approachController();                           //Approach a specific target/wall.
+          behaviorState &= (~MASK_APPROACH);              //Approach is used on an as-needed basis.
+        }
 
-        //behaviorState|= MASK_WANDER;
-        //wanderController();
-        //behaviorState&= MASK_WANDER;
+        //If an approach is not required and we are within the target distance for a wall to follow, execute it.
+        else if(5.75 <= meas && meas <= 6.25){            //A wall follow can not be interrupted.
+          Serial.println("THIS IS WALL FOLLOW");          //We also do not have the ability to monitor the rangefinder reported distance mid-wall follow.
+          behaviorState|= MASK_WALLFOLLOW;
+          wallFollowController();                         
+          //behaviorState &= (~MASK_WALLFOLLOW);          //Allow the controller to deactivate itself instead.
+        }
+
+        //When approaching is outside of specifications (we are 'very' far away from a wall), wander around the space attempting to find a wall.
+        else if(meas > 20.0){
+          Serial.println("THIS IS WANDER");
+          behaviorState|= MASK_WANDER;
+          wanderController();
+          //behaviorState &= (~MASK_WANDER);              //Allow the controller to deactivate itself instead.
+        }      
 
       } else {
         delay(5);
@@ -419,4 +453,3 @@ void loop() {
       break;
   }
 }
-
