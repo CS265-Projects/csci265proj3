@@ -37,6 +37,17 @@ public:
         : cmPerEncoderTick(wheelDiam * M_PI / ticksPerRevolution), robotRadius(wheelTrack / 2.0)
         {}
     
+    //Mods
+
+    /** \brief Commands the chassis to drive in arch for set angle
+    * @param xDot linear velocity
+    * @param thetaDot angular velocity
+    * @param block is it blocking call
+    */
+    void moveArch(float xDot, float thetaDot, bool block);
+
+    //END Mods
+
     /** \brief Initializes the chassis. Must be called in setup().
      * */
     void init(void);

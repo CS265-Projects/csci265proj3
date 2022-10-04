@@ -32,6 +32,30 @@ void Chassis::init(void)
     interrupts();
 }
 
+void Chassis::moveArch(float xDot, float thetaDot, bool block) {
+ float circumr= 0.0;
+ float circuml= 0.0;
+ float TURN_ANGLE= 180.0/thetaDot;
+ if (thetaDot > 0) {
+ circumr= TURN_ANGLE * 13.0; //10
+ circuml= TURN_ANGLE * 6.75; //4
+ } else {
+ //The encoder count is always positive
+ //only the twist angular rate is negative
+ circumr= fabs(TURN_ANGLE * 6.75);
+ circuml= fabs(TURN_ANGLE * 13.0);
+ }
+ //int16_t delta = TURN_ANGLE * (robotRadius * 3.14/180.0) /cmPerEncoderTick;
+ int16_t deltar= circumr/cmPerEncoderTick;
+ int16_t deltal= circuml/cmPerEncoderTick;
+ setTwist(xDot,thetaDot);
+ leftMotor.moveFor(deltal);
+ rightMotor.moveFor(deltar);
+ if(block) {
+ while(!checkMotionComplete()) {delay(1);}
+ }
+}
+
 void Chassis::setMotorPIDcoeffs(float kp, float ki)
 {
     leftMotor.setPIDCoeffients(kp, ki);
